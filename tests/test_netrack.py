@@ -177,5 +177,18 @@ class TestNetTrack(unittest.TestCase):
             shutil.rmtree(temp_dir, ignore_errors=True)
 
 
+    def test_netsentinel_dashboard(self):
+        from netrack.ui import NetSentinelDashboard
+
+        dashboard = NetSentinelDashboard()
+        dashboard.process_new_flow(is_fingerprint=True, tech_id=1)
+        dashboard.process_new_flow(is_fingerprint=False)
+
+        self.assertEqual(dashboard.total_scanned, 2)
+        self.assertGreaterEqual(dashboard.total_blocked, 1)
+        self.assertEqual(len(dashboard.feed_logs), 2)
+        self.assertIsNotNone(dashboard.selected_flow)
+
+
 if __name__ == "__main__":
     unittest.main()

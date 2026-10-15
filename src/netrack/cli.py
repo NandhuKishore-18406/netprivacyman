@@ -334,6 +334,10 @@ def main():
     train_parser.add_argument("--models-dir", type=str, default="models", help="Directory to save trained model artifacts")
     train_parser.add_argument("--seed", type=int, default=42, help="Random seed")
 
+    monitor_parser = subparsers.add_parser("monitor", help="Launch real-time NetSentinel ncurses dashboard")
+    monitor_parser.add_argument("--models-dir", type=str, default="models", help="Directory where trained models are stored")
+    monitor_parser.add_argument("--refresh-ms", type=int, default=150, help="Traffic flow interval in ms")
+
     collect_parser = subparsers.add_parser("collect", help="Collect live traffic with Chrome Selenium + tshark")
     collect_parser.add_argument("--url", type=str, required=True, help="Website URL to crawl")
 
@@ -353,6 +357,10 @@ def main():
     elif args.command == "defense":
         models_dir = getattr(args, "models_dir", "models")
         run_two_tier_defense_demo(models_dir=models_dir)
+    elif args.command == "monitor":
+        from netrack.ui import launch_dashboard
+        models_dir = getattr(args, "models_dir", "models")
+        launch_dashboard(models_dir=models_dir)
     else:
         benign = getattr(args, "benign", 2220)
         tracker = getattr(args, "tracker", 1266)
