@@ -126,7 +126,8 @@ class BenchmarkFlowGenerator:
             urls = ["https://google-analytics.com/collect", "https://doubleclick.net/gampad/ads"]
         else:
             num_packets = random.randint(5, 100)
-            urls = ["https://example.com/index.html", "https://cdn.example.com/app.js"]
+            site = random.choice(TrancoDatasetLoader.DEFAULT_TRANCO_SITES)
+            urls = [f"{site}/index.html", f"{site}/app.js"]
 
         packets = []
         noisy_label = is_tracker if (random.random() > 0.06) else (not is_tracker)
@@ -255,7 +256,7 @@ class BenchmarkFlowGenerator:
             packets.append((1, int(np.clip(np.random.normal(320, 60), 180, 480))))
             packets.append((-1, int(np.clip(np.random.normal(80, 20), 54, 150))))
             packets.append((1, 54))
-            default_urls = ["https://webrtc-leak.privacy.net/candidate", "https://ip-check.kasada.io/rtc"]
+            default_urls = ["https://cdn.augur.io/augur.min.js", "https://static.fraudmetrix.cn/fm.js"]
 
         else:
             return self.generate_flow(is_tracker=False)
