@@ -78,14 +78,19 @@ class NetSentinelDashboard:
         self.win_footer: Optional[curses.window] = None
 
     def init_colors(self):
-        curses.start_color()
-        curses.use_default_colors()
-        curses.init_pair(PAIR_INFO, curses.COLOR_GREEN, -1)
-        curses.init_pair(PAIR_WARN, curses.COLOR_YELLOW, -1)
-        curses.init_pair(PAIR_CRITICAL, curses.COLOR_RED, -1)
-        curses.init_pair(PAIR_HEADER, curses.COLOR_CYAN, -1)
-        curses.init_pair(PAIR_ACCENT, curses.COLOR_MAGENTA, -1)
-        curses.init_pair(PAIR_HIGHLIGHT, curses.COLOR_BLACK, curses.COLOR_YELLOW)
+        if curses.has_colors():
+            curses.start_color()
+            try:
+                curses.use_default_colors()
+                bg = -1
+            except Exception:
+                bg = curses.COLOR_BLACK
+            curses.init_pair(PAIR_INFO, curses.COLOR_GREEN, bg)
+            curses.init_pair(PAIR_WARN, curses.COLOR_YELLOW, bg)
+            curses.init_pair(PAIR_CRITICAL, curses.COLOR_RED, bg)
+            curses.init_pair(PAIR_HEADER, curses.COLOR_CYAN, bg)
+            curses.init_pair(PAIR_ACCENT, curses.COLOR_MAGENTA, bg)
+            curses.init_pair(PAIR_HIGHLIGHT, curses.COLOR_BLACK, curses.COLOR_YELLOW)
 
     def create_windows(self):
         max_y, max_x = self.stdscr.getmaxyx()
@@ -275,9 +280,9 @@ class NetSentinelDashboard:
             item = self.blocked_hosts[idx]
             is_selected = (idx == self.blocked_scroll_offset and is_focused)
 
-            domain = item["domain"][:18]
-            tech_abbr = item["tech_abbr"]
-            ts = item["time_str"]
+            domain = item.get("domain", item.get("endpoint", "Unknown"))[:18]
+            tech_abbr = item.get("tech_abbr", "FP")
+            ts = item.get("time_str", "--:--:--")
 
             line_str = f" {ts} {domain:<18} [{tech_abbr}]"
 
@@ -467,6 +472,7 @@ class NetSentinelDashboard:
         feed_entry = {
             "time_str": time_str,
             "endpoint": domain,
+            "domain": domain,
             "url": main_url,
             "packet_count": len(flow),
             "up_b": up_bytes,
