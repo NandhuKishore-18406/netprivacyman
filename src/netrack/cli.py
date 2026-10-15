@@ -337,6 +337,8 @@ def main():
     monitor_parser = subparsers.add_parser("monitor", help="Launch real-time NetSentinel ncurses dashboard")
     monitor_parser.add_argument("--models-dir", type=str, default="models", help="Directory where trained models are stored")
     monitor_parser.add_argument("--refresh-ms", type=int, default=150, help="Traffic flow interval in ms")
+    monitor_parser.add_argument("--live", action="store_true", help="Enable passive live interface packet sniffing (100% safe, read-only)")
+    monitor_parser.add_argument("--interface", type=str, default=None, help="Network interface to sniff (default: autodetected active route)")
 
     collect_parser = subparsers.add_parser("collect", help="Collect live traffic with Chrome Selenium + tshark")
     collect_parser.add_argument("--url", type=str, required=True, help="Website URL to crawl")
@@ -360,7 +362,10 @@ def main():
     elif args.command == "monitor":
         from netrack.ui import launch_dashboard
         models_dir = getattr(args, "models_dir", "models")
-        launch_dashboard(models_dir=models_dir)
+        refresh_ms = getattr(args, "refresh_ms", 150)
+        live = getattr(args, "live", False)
+        interface = getattr(args, "interface", None)
+        launch_dashboard(models_dir=models_dir, refresh_ms=refresh_ms, live_mode=live, interface=interface)
     else:
         benign = getattr(args, "benign", 2220)
         tracker = getattr(args, "tracker", 1266)

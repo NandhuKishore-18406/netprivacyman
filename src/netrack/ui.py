@@ -15,11 +15,12 @@ import time
 import curses
 import random
 import logging
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from collections import deque
 
 from netrack.deep_model import TwoTierFingerprintDefense
 from netrack.dataset import BenchmarkFlowGenerator, PrincetonTSVLoader, TrackerRadarLabeler
+from netrack.live import LivePacketSniffer
 
 logger = logging.getLogger(__name__)
 
@@ -36,9 +37,23 @@ PAIR_HIGHLIGHT = 6  # Black on Yellow
 class NetSentinelDashboard:
     """Ncurses TUI Frontend modeled after NetSentinel."""
 
-    def __init__(self, models_dir: str = "models", refresh_ms: int = 150):
+    def __init__(
+        self,
+        models_dir: str = "models",
+        refresh_ms: int = 150,
+        live_mode: bool = False,
+        interface: Optional[str] = None,
+    ):
         self.models_dir = models_dir
         self.refresh_ms = refresh_ms
+        self.live_mode = live_mode
+        self.interface = interface
+        self.sniffer: Optional[LivePacketSniffer] = None
+
+        if self.live_mode:
+            self.sniffer = LivePacketSniffer(interface=self.interface)
+            self.interface = self.sniffer.interface
+
         self.defense = TwoTierFingerprintDefense(models_dir=models_dir)
         self.generator = BenchmarkFlowGenerator(seed=int(time.time()))
         self.princeton = PrincetonTSVLoader()
@@ -136,7 +151,11 @@ class NetSentinelDashboard:
 
         # Banner Title
         win.attron(curses.color_pair(PAIR_HEADER) | curses.A_BOLD)
-        win.addstr(1, 2, "[ NetTrack / NetSentinel - Two-Tier Browser Fingerprinting Defense ]")
+        if self.live_mode and self.sniffer:
+            title = f"[ NetTrack / NetSentinel - PASSIVE LIVE MONITOR ({self.sniffer.interface}) ]"
+        else:
+            title = "[ NetTrack / NetSentinel - Two-Tier Browser Fingerprinting Defense ]"
+        win.addstr(1, 2, title)
         win.attroff(curses.color_pair(PAIR_HEADER) | curses.A_BOLD)
 
         # Uptime & Status
@@ -155,7 +174,8 @@ class NetSentinelDashboard:
             win.attroff(curses.color_pair(PAIR_WARN) | curses.A_BOLD)
         else:
             win.attron(curses.color_pair(PAIR_INFO) | curses.A_BOLD)
-            win.addstr("ACTIVE (MONITORING)")
+            status_text = f"ACTIVE ({'LIVE SNIFF' if self.live_mode else 'SIMULATION'})"
+            win.addstr(status_text)
             win.attroff(curses.color_pair(PAIR_INFO) | curses.A_BOLD)
 
         rate = (self.total_scanned / max(1, elapsed))
@@ -164,9 +184,14 @@ class NetSentinelDashboard:
         win.addstr(2, 72, f"Blocked: {self.total_blocked}")
 
         win.addstr(2, 90, "Firewall: ")
-        win.attron(curses.color_pair(PAIR_CRITICAL) | curses.A_BOLD)
-        win.addstr("[AUTO-BLOCK ON]")
-        win.attroff(curses.color_pair(PAIR_CRITICAL) | curses.A_BOLD)
+        if self.live_mode:
+            win.attron(curses.color_pair(PAIR_INFO) | curses.A_BOLD)
+            win.addstr("[PASSIVE / SAFE]")
+            win.attroff(curses.color_pair(PAIR_INFO) | curses.A_BOLD)
+        else:
+            win.attron(curses.color_pair(PAIR_CRITICAL) | curses.A_BOLD)
+            win.addstr("[AUTO-BLOCK ON]")
+            win.attroff(curses.color_pair(PAIR_CRITICAL) | curses.A_BOLD)
 
         win.noutrefresh()
 
@@ -428,18 +453,23 @@ class NetSentinelDashboard:
             return
         win.erase()
         win.attron(curses.color_pair(PAIR_HIGHLIGHT) | curses.A_BOLD)
-        msg = " [q] Quit  |  [Space] Pause/Resume  |  [Tab] Switch Panel  |  [t] Inject Fingerprint Burst  |  [b] Inject Benign  |  [c] Clear "
+        if self.live_mode and self.sniffer:
+            msg = f" [q] Quit  |  [Space] Pause  |  [Tab] Switch Panel  |  [t] Inject FP Burst  |  [b] Inject Benign  |  Passive Live: {self.sniffer.interface} ({self.sniffer.local_ip}) "
+        else:
+            msg = " [q] Quit  |  [Space] Pause  |  [Tab] Switch Panel  |  [t] Inject FP Burst  |  [b] Inject Benign  |  [c] Clear  |  Mode: BENCHMARK SIMULATION "
         max_x = win.getmaxyx()[1]
         win.addstr(0, 0, msg[:max_x - 1])
         win.attroff(curses.color_pair(PAIR_HIGHLIGHT) | curses.A_BOLD)
         win.noutrefresh()
 
-    def process_new_flow(self, is_fingerprint: bool, tech_id: Optional[int] = None):
+    def process_flow(
+        self,
+        flow: List[Tuple[int, int]],
+        urls: List[str],
+        domain: Optional[str] = None,
+        source: str = "LIVE",
+    ):
         """Processes one connection flow trace through the Two-Tier Defense."""
-        if tech_id is None:
-            tech_id = random.choice([1, 2, 3, 4]) if is_fingerprint else 0
-
-        flow, urls = self.generator.generate_technique_flow(tech_id, loader=self.princeton)
         result = self.defense.analyze_flow(flow, urls)
 
         self.total_scanned += 1
@@ -463,8 +493,9 @@ class NetSentinelDashboard:
         )
 
         time_str = time.strftime("%H:%M:%S")
-        main_url = urls[0] if urls else "https://example.com/resource"
-        domain = main_url.split("//")[-1].split("/")[0]
+        main_url = urls[0] if urls else f"https://{domain or 'unknown'}/live"
+        if not domain:
+            domain = main_url.split("//")[-1].split("/")[0]
 
         up_bytes = int(result["flow_summary"]["total_uplink_bytes"])
         down_bytes = int(result["flow_summary"]["total_downlink_bytes"])
@@ -474,13 +505,14 @@ class NetSentinelDashboard:
             "endpoint": domain,
             "domain": domain,
             "url": main_url,
+            "source": source,
             "packet_count": len(flow),
             "up_b": up_bytes,
             "down_b": down_bytes,
             "rf_prob": rf_prob,
             "technique": pred_tech,
             "is_blocked": is_blocked,
-            "radar_score": result["ground_truth"]["tracker_radar_score"],
+            "radar_score": radar_score,
             "attention_weights": t2_res.get("packet_attention_weights", []),
             "salient_pkt": t2_res.get("most_salient_packet", {}),
         }
@@ -503,6 +535,21 @@ class NetSentinelDashboard:
         else:
             self.total_benign += 1
 
+    def process_new_flow(self, is_fingerprint: bool, tech_id: Optional[int] = None):
+        """Generates and processes a benchmark / burst flow through Two-Tier Defense."""
+        if tech_id is None:
+            tech_id = random.choice([1, 2, 3, 4]) if is_fingerprint else 0
+
+        flow, urls = self.generator.generate_technique_flow(tech_id, loader=self.princeton)
+        main_url = urls[0] if urls else "https://example.com/resource"
+        domain = main_url.split("//")[-1].split("/")[0]
+        self.process_flow(
+            flow=flow,
+            urls=urls,
+            domain=domain,
+            source="BURST" if is_fingerprint else "BENIGN",
+        )
+
     def run(self, stdscr: curses.window):
         self.stdscr = stdscr
         self.stdscr.nodelay(True)
@@ -510,63 +557,96 @@ class NetSentinelDashboard:
         self.init_colors()
         self.create_windows()
 
+        if self.live_mode and self.sniffer:
+            self.sniffer.start()
+
         last_flow_time = time.time()
 
-        while self.running:
-            # Handle user input
-            try:
-                ch = self.stdscr.getch()
-            except Exception:
-                ch = -1
+        try:
+            while self.running:
+                # Handle user input
+                try:
+                    ch = self.stdscr.getch()
+                except Exception:
+                    ch = -1
 
-            if ch in [ord('q'), ord('Q')]:
-                self.running = False
-                break
-            elif ch == ord(' '):
-                self.paused = not self.paused
-            elif ch in [ord('\t'), 9]:
-                self.current_focus = (self.current_focus + 1) % 2
-            elif ch in [ord('t'), ord('T')]:
-                self.process_new_flow(is_fingerprint=True)
-            elif ch in [ord('b'), ord('B')]:
-                self.process_new_flow(is_fingerprint=False)
-            elif ch in [ord('c'), ord('C')]:
-                self.feed_logs.clear()
-                self.blocked_hosts.clear()
-            elif ch in [curses.KEY_UP, ord('k')]:
-                if self.blocked_hosts:
-                    self.blocked_scroll_offset = max(0, self.blocked_scroll_offset - 1)
-                    self.selected_flow = self.blocked_hosts[self.blocked_scroll_offset]
-            elif ch in [curses.KEY_DOWN, ord('j')]:
-                if self.blocked_hosts:
-                    self.blocked_scroll_offset = min(len(self.blocked_hosts) - 1, self.blocked_scroll_offset + 1)
-                    self.selected_flow = self.blocked_hosts[self.blocked_scroll_offset]
-            elif ch == curses.KEY_RESIZE:
-                self.create_windows()
+                if ch in [ord('q'), ord('Q')]:
+                    self.running = False
+                    break
+                elif ch == ord(' '):
+                    self.paused = not self.paused
+                elif ch in [ord('\t'), 9]:
+                    self.current_focus = (self.current_focus + 1) % 2
+                elif ch in [ord('t'), ord('T')]:
+                    self.process_new_flow(is_fingerprint=True)
+                elif ch in [ord('b'), ord('B')]:
+                    self.process_new_flow(is_fingerprint=False)
+                elif ch in [ord('c'), ord('C')]:
+                    self.feed_logs.clear()
+                    self.blocked_hosts.clear()
+                elif ch in [curses.KEY_UP, ord('k')]:
+                    if self.blocked_hosts:
+                        self.blocked_scroll_offset = max(0, self.blocked_scroll_offset - 1)
+                        self.selected_flow = self.blocked_hosts[self.blocked_scroll_offset]
+                elif ch in [curses.KEY_DOWN, ord('j')]:
+                    if self.blocked_hosts:
+                        self.blocked_scroll_offset = min(len(self.blocked_hosts) - 1, self.blocked_scroll_offset + 1)
+                        self.selected_flow = self.blocked_hosts[self.blocked_scroll_offset]
+                elif ch == curses.KEY_RESIZE:
+                    self.create_windows()
 
-            # Automatic traffic flow generator
-            now = time.time()
-            if not self.paused and (now - last_flow_time) > (self.refresh_ms / 1000.0):
-                # 70% benign, 30% fingerprinting
-                is_fp = (random.random() < 0.32)
-                self.process_new_flow(is_fingerprint=is_fp)
-                last_flow_time = now
+                now = time.time()
 
-            # Redraw panels
-            self.draw_header()
-            self.draw_counters()
-            self.draw_blocked_hosts()
-            self.draw_feed()
-            self.draw_inspector()
-            self.draw_footer()
+                # Process live traffic flows if in live mode
+                if self.live_mode and self.sniffer and not self.paused:
+                    processed_count = 0
+                    while processed_count < 5:
+                        flow_item = self.sniffer.get_next_flow(timeout=0.005)
+                        if flow_item is None:
+                            break
+                        self.process_flow(
+                            flow=flow_item["packets"],
+                            urls=flow_item["urls"],
+                            domain=flow_item["domain"],
+                            source="LIVE",
+                        )
+                        processed_count += 1
+                elif not self.live_mode and not self.paused:
+                    # Automatic traffic flow generator
+                    if (now - last_flow_time) > (self.refresh_ms / 1000.0):
+                        # 70% benign, 30% fingerprinting
+                        is_fp = (random.random() < 0.32)
+                        self.process_new_flow(is_fingerprint=is_fp)
+                        last_flow_time = now
 
-            curses.doupdate()
-            time.sleep(0.04)
+                # Redraw panels
+                self.draw_header()
+                self.draw_counters()
+                self.draw_blocked_hosts()
+                self.draw_feed()
+                self.draw_inspector()
+                self.draw_footer()
+
+                curses.doupdate()
+                time.sleep(0.04)
+        finally:
+            if self.sniffer:
+                self.sniffer.stop()
 
 
-def launch_dashboard(models_dir: str = "models"):
+def launch_dashboard(
+    models_dir: str = "models",
+    refresh_ms: int = 150,
+    live_mode: bool = False,
+    interface: Optional[str] = None,
+):
     """Launches the NetSentinel ncurses dashboard."""
-    dashboard = NetSentinelDashboard(models_dir=models_dir)
+    dashboard = NetSentinelDashboard(
+        models_dir=models_dir,
+        refresh_ms=refresh_ms,
+        live_mode=live_mode,
+        interface=interface,
+    )
     curses.wrapper(dashboard.run)
 
 
