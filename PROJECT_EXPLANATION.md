@@ -107,15 +107,38 @@ This document provides a comprehensive technical breakdown of every file in `src
 
 ---
 
+## 7. Two-Tier Deep Learning Engine — `src/netrack/deep_model.py`
+- **File Path:** [`src/netrack/deep_model.py`](file:///home/nandhu/projects/mlproject%28netrack%29/src/netrack/deep_model.py)
+- **Role:** Deep Learning Complementary Defense System (PyTorch) providing technique attribution and packet saliency heatmaps.
+- **Key Components:**
+  1. **`HybridAttentionFingerprintNet`**:
+     - **Dual-Branch Architecture:**
+       - **Branch A (Tabular MLP):** Maps the 62 macroscopic STAT features to a 32-dim tabular embedding via dense layers, batch normalization, and LeakyReLU.
+       - **Branch B (1D-CNN):** Processes raw signed packet sequences ($S_i = \text{direction} \times \text{length}$) through two 1D convolutional layers with ReLU.
+     - **Self-Attention Query Layer:** Projects sequence embeddings to attention weights ($\alpha_1 \dots \alpha_{25}$) across the packet sequence. Produces a packet saliency heatmap that pinpoints the exact packet containing the fingerprint upload.
+     - **Dual Multi-Task Output Heads:**
+       - **Binary Head:** Outputs sigmoid confidence $P(\text{Fingerprinting})$.
+       - **Technique Attribution Head:** Outputs softmax probabilities across 5 classes (Benign, Canvas, AudioContext, Canvas-Font, WebRTC Local IP).
+  2. **`TwoTierFingerprintDefense`**:
+     - Coordinates the two tiers: Line-rate Random Forest screens flows in $<0.04\text{ ms}$. If suspicious ($P \ge 0.30$), triggers Tier 2 deep attribution and generates packet saliency diagnostics. Automatically loads saved checkpoints from `models/`.
+  3. **`FingerprintDefenseTrainer`**:
+     - Orchestrates end-to-end dataset synthesis with ground-truth URLs from `data/princeton_fingerprinting/` and `data/tracker-radar/`.
+     - Trains both Tier 1 Random Forest and Tier 2 PyTorch model using joint loss $\mathcal{L} = \mathcal{L}_{\text{BCE}} + 0.5 \mathcal{L}_{\text{CE}}$ and saves checkpoints to `models/`.
+
+---
+
 ## Quick Start & Usage Commands
 
 ```bash
-# 1. Activate virtual environment
-source .venv/bin/activate.fish
+# 1. Run unit test suite (12 tests)
+python -m unittest discover tests
 
-# 2. Run unit test suite
-uv run python -m unittest discover tests
+# 2. Train Two-Tier Defense Models
+python -m netrack.cli train --epochs 10 --batch-size 32
 
-# 3. Execute full reproduction pipeline
-uv run python -m netrack.cli pipeline
+# 3. Run Real-Time Firewall Analysis Demo
+python -m netrack.cli defense
+
+# 4. Execute Full WWW 2023 Reproduction Pipeline
+python -m netrack.cli pipeline
 ```
