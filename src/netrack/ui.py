@@ -448,7 +448,14 @@ class NetSentinelDashboard:
 
         pred_tech = t2_res.get("predicted_technique", "Benign")
         rf_prob = result["tier1_random_forest"]["fingerprint_probability"]
-        is_blocked = (rf_prob > 0.5 or t2_res.get("dl_confidence", 0) > 0.5)
+        radar_score = result["ground_truth"]["tracker_radar_score"]
+        is_blocked = (
+            "BLOCKED" in result.get("overall_decision", "")
+            or pred_tech in self.defense.TECHNIQUES[1:]
+            or rf_prob >= 0.5
+            or t2_res.get("dl_confidence", 0) >= 0.5
+            or radar_score >= 2
+        )
 
         time_str = time.strftime("%H:%M:%S")
         main_url = urls[0] if urls else "https://example.com/resource"
