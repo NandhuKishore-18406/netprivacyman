@@ -130,56 +130,58 @@ uv pip install -e .
 uv pip install torch --index-url https://download.pytorch.org/whl/cpu
 ```
 
-### 2. Run the Unit Test Suite
+#### 2. Run the Unit Test Suite
 
 ```bash
 python -m unittest discover tests
 ```
-*(All 12 unit tests verify feature extraction, flow directionality, labelers, RF, deep model, and trainer).*
+*(All 15 unit tests verify feature extraction, flow directionality, labelers, RF, deep model, trainer, live sniffer, and dashboard).*
 
 ---
 
 ## 💻 CLI Commands
 
-### 1. Train the Two-Tier Defense System
+### 1. Launch the NetSentinel Real-Time Ncurses Dashboard
+
+**Option A: Passive Live Monitoring (100% Safe, Zero Sudo, Active Network Interface)**
+Sniffs live HTTPS traffic directly from your active network interface (autodetecting `wlan0` / `eno1`), extracts TLS SNI domain names, and screens incoming flows with the Two-Tier Defense in real time without altering firewall or network settings:
+
+```bash
+python -m netrack.cli monitor --live
+```
+*(Optional: specify an interface manually using `--interface <dev>`)*
+
+**Option B: Benchmark Simulation & Manual Injection**
+Runs simulated realistic benign and fingerprinting flows:
+
+```bash
+python -m netrack.cli monitor
+```
+
+**Interactive Keyboard Controls:**
+- `q`: Quit cleanly
+- `Space`: Pause / Resume real-time monitoring
+- `Tab`: Switch focus between **Blocked Hosts** and **Attention Saliency Inspector**
+- `t`: Inject a fingerprinting burst attack (Canvas, AudioContext, Font, or WebRTC)
+- `b`: Inject a benign flow
+- `c`: Clear feed logs and blocked host history
+- `Up` / `Down` (or `k` / `j`): Select and inspect historical flows
+
+### 2. Train the Two-Tier Defense System
 Trains Tier 1 Random Forest and Tier 2 Hybrid Attention Network and saves production weights to `models/`:
 
 ```bash
 python -m netrack.cli train --epochs 10 --batch-size 32 --benign 1000 --per-technique 250
 ```
 
-### 2. Run the Real-Time Defense Firewall Demo
+### 3. Run the Two-Tier Defense Terminal Demo
 Analyzes encrypted connections in real-time, displays Tier 1 latency, Tier 2 technique attribution, and the packet attention saliency heatmap:
 
 ```bash
 python -m netrack.cli defense
 ```
 
-**Example Output:**
-```text
-================================================================================
-TWO-TIER COMPLEMENTARY BROWSER FINGERPRINTING DEFENSE
-================================================================================
-Tier 1: Line-Rate Random Forest (97-dim Algorithm 1 features, <0.1ms)
-Tier 2: Deep Learning Attention Network (Technique Attribution & Packet Saliency)
-Ground Truth: Princeton Web Census TSVs & DuckDuckGo Tracker Radar
-================================================================================
-
-[SCENARIO 1: Real-Time Analysis of an Encrypted Connection to 'https://fpjs.io/api/v3/telemetry']
-- Total Packets: 11 | Total Uplink: 4045 B | Total Downlink: 1637 B
-- Tier 1 Random Forest: Fingerprint Probability = 100.0% (Latency: 0.034 ms)
-- Tier 2 Deep Attribution: Canvas Fingerprinting (Ground Truth: Canvas Fingerprinting, Radar Score: 3/3)
-- Saliency Attention: Packet #8 (Uplink (Client -> Server), 907B) triggered peak attention (0.516)
-- Final Firewall Decision: BLOCKED (Browser Fingerprinting)
-
-[SCENARIO 2: Real-Time Analysis of an Encrypted Connection to 'https://example.com/index.html']
-- Total Packets: 18 | Total Uplink: 1573 B | Total Downlink: 13496 B
-- Tier 1 Random Forest: Fingerprint Probability = 0.0% (Latency: 0.031 ms)
-- Tier 2 Deep Attribution: Benign (Ground Truth: Benign, Radar Score: 0/3)
-- Final Firewall Decision: ALLOWED (Benign)
-```
-
-### 3. Run the Full WWW 2023 Reproduction Pipeline
+### 4. Run the Full WWW 2023 Reproduction Pipeline
 Reproduces the empirical findings, ablation experiments (Figures 4, 5, 6, 9), and Tables 2, 3, 4 from the WWW 2023 paper:
 
 ```bash

@@ -189,6 +189,48 @@ class TestNetTrack(unittest.TestCase):
         self.assertEqual(len(dashboard.feed_logs), 2)
         self.assertIsNotNone(dashboard.selected_flow)
 
+    def test_live_sniffer_and_tracker(self):
+        from netrack.live import get_default_interface, LiveFlowTracker, LivePacketSniffer
+
+        iface, local_ip = get_default_interface()
+        self.assertTrue(len(iface) > 0)
+        self.assertTrue(len(local_ip) > 0)
+
+        # Test flow tracker
+        key = ("192.168.1.100", 45000, "93.184.216.34", 443)
+        tracker = LiveFlowTracker(key=key, client_ip="192.168.1.100", domain="example.com")
+        tracker.add_packet("192.168.1.100", 120)  # Uplink (+1)
+        tracker.add_packet("93.184.216.34", 1420)  # Downlink (-1)
+        tracker.add_packet("93.184.216.34", 64, is_fin=True)  # Downlink FIN
+
+        self.assertEqual(len(tracker.packets), 3)
+        self.assertEqual(tracker.packets[0], (1, 120))
+        self.assertEqual(tracker.packets[1], (-1, 1420))
+        self.assertTrue(tracker.is_finished)
+
+        # Test sniffer init and queue
+        sniffer = LivePacketSniffer(interface=iface)
+        self.assertFalse(sniffer.running)
+        self.assertIsNone(sniffer.get_next_flow(timeout=0.001))
+
+    def test_dashboard_live_flow_processing(self):
+        from netrack.ui import NetSentinelDashboard
+
+        dashboard = NetSentinelDashboard(live_mode=True)
+        self.assertTrue(dashboard.live_mode)
+        self.assertIsNotNone(dashboard.sniffer)
+
+        live_packets = [(1, 150), (-1, 1400), (1, 200), (-1, 800)]
+        dashboard.process_flow(
+            flow=live_packets,
+            urls=["https://wikipedia.org/wiki/Main_Page"],
+            domain="wikipedia.org",
+            source="LIVE",
+        )
+        self.assertEqual(dashboard.total_scanned, 1)
+        self.assertEqual(dashboard.feed_logs[-1]["domain"], "wikipedia.org")
+        self.assertEqual(dashboard.feed_logs[-1]["source"], "LIVE")
+
 
 if __name__ == "__main__":
     unittest.main()
